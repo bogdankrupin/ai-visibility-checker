@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="uk">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <title>AI Visibility Checker</title>
@@ -8,23 +8,23 @@
 <body>
   <header>
     <h1>AI Visibility Checker</h1>
-    <button id="toggleSettings" class="ghost" title="Налаштування">⚙</button>
+    <button id="toggleSettings" class="ghost" title="Settings">⚙</button>
   </header>
 
   <section id="settings" class="card hidden">
-    <p id="welcome" class="muted hidden" style="margin-top:0">Щоб почати, встав два API-ключі. Вони зберігаються лише в твоєму браузері.</p>
+    <p id="welcome" class="muted hidden" style="margin-top:0">To get started, paste two API keys. They are stored only in your browser.</p>
 
     <label>Anthropic API key
       <input id="anthropicKey" type="password" placeholder="sk-ant-..." autocomplete="off" />
-      <a class="hint" href="https://console.anthropic.com/settings/keys" target="_blank">Де взяти ключ →</a>
+      <a class="hint" href="https://console.anthropic.com/settings/keys" target="_blank">Where to get it →</a>
     </label>
 
     <label>SE Ranking API key (Data API)
-      <input id="serankingKey" type="password" placeholder="Ключ SE Ranking API" autocomplete="off" />
-      <a class="hint" href="https://seranking.com/api/data/getting-started#authentication" target="_blank">Де взяти ключ →</a>
+      <input id="serankingKey" type="password" placeholder="Your SE Ranking API key" autocomplete="off" />
+      <a class="hint" href="https://seranking.com/api/data/getting-started#authentication" target="_blank">Where to get it →</a>
     </label>
 
-    <label>Країна бази SE Ranking
+    <label>SE Ranking database country
       <select id="country">
         <option value="us">US</option>
         <option value="gb">UK</option>
@@ -39,24 +39,24 @@
     </label>
 
     <details>
-      <summary class="muted">Додатково</summary>
-      <label>Промптів з бази на рушій (200 кредитів за кожен)
+      <summary class="muted">Advanced</summary>
+      <label>Database prompts per engine (200 credits each)
         <input id="serLimit" type="number" min="1" max="100" value="10" />
       </label>
-      <label>Модель Claude
+      <label>Claude model
         <input id="model" type="text" value="claude-sonnet-5-5" />
       </label>
     </details>
 
     <div class="row" style="margin-top:8px">
-      <button id="saveSettings" class="primary-sm">Зберегти і перевірити ключі</button>
+      <button id="saveSettings" class="primary-sm">Save and test keys</button>
     </div>
     <p id="settingsMsg" class="muted"></p>
   </section>
 
   <section class="card">
-    <div id="pageInfo" class="muted">Відкрий сторінку і натисни «Перевірити».</div>
-    <button id="run" class="primary">Перевірити сторінку</button>
+    <div id="pageInfo" class="muted">Open a page and click “Check this page”.</div>
+    <button id="run" class="primary">Check this page</button>
     <div id="cacheInfo" class="foot hidden"></div>
   </section>
 

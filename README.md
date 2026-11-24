@@ -1,73 +1,73 @@
 # AI Visibility Checker
 
-Chrome-розширення, яке показує, чи цитують AI-чати поточну сторінку.
+A Chrome extension that shows whether AI chats cite the page you're looking at.
 
-Відкриваєш будь-яку статтю, натискаєш «Перевірити сторінку». Розширення придумує 5 промптів, за якими цю сторінку логічно шукати, і показує матрицю: за якими промптами і в яких рушіях (Claude, ChatGPT, AI Mode, AI Overview, Gemini, Perplexity) сторінку знайдено, а за якими ні.
+Open any article and click **Check this page**. The extension writes 5 prompts people would plausibly use to find this page and shows a matrix: for which prompts and in which engines (Claude, ChatGPT, AI Mode, AI Overview, Gemini, Perplexity) the page shows up, and where it doesn't.
 
-Без серверів і без налаштувань у терміналі. Ключі API зберігаються лише у твоєму браузері.
+No servers and no command line. Your API keys stay in your browser.
 
 ---
 
-## Встановлення (2 хвилини)
+## Install (2 minutes)
 
-1. **Завантаж розширення.** Відкрий розділ [Releases](../../releases/latest) цього репозиторію і завантаж файл `ai-visibility-checker.zip`.
-2. **Розпакуй zip** у папку, яку не видалятимеш (наприклад, `Documents/ai-visibility-checker`). Chrome бере розширення саме з цієї папки.
-3. **Відкрий** `chrome://extensions` у Chrome.
-4. **Увімкни Developer mode** — перемикач у правому верхньому куті.
-5. **Натисни Load unpacked** і вибери розпаковану папку.
-6. **Закріпи іконку** через значок пазла на панелі Chrome.
+1. **Download the extension.** Go to this repo's [Releases](../../releases/latest) and download `ai-visibility-checker.zip`.
+2. **Unzip it** into a folder you'll keep (for example `Documents/ai-visibility-checker`). Chrome loads the extension from that folder.
+3. **Open** `chrome://extensions` in Chrome.
+4. **Turn on Developer mode** with the toggle in the top right corner.
+5. **Click Load unpacked** and select the unzipped folder.
+6. **Pin the icon** using the puzzle icon in the Chrome toolbar.
 
-## Перший запуск
+## First run
 
-1. Натисни на іконку розширення — праворуч відкриється бічна панель.
-2. Встав два ключі:
-   - **Anthropic API key** — з [console.anthropic.com](https://console.anthropic.com/settings/keys)
-   - **SE Ranking API key** — ключ Data API з акаунта SE Ranking ([як отримати](https://seranking.com/api/data/getting-started#authentication))
-3. Натисни «Зберегти і перевірити ключі». Обидва рядки мають стати зеленими.
-4. Відкрий статтю і натисни **«Перевірити сторінку»**. Перевірка триває 20–40 секунд.
+1. Click the extension icon. A side panel opens on the right.
+2. Paste two keys:
+   - **Anthropic API key** from [console.anthropic.com](https://console.anthropic.com/settings/keys)
+   - **SE Ranking API key** for the Data API from your SE Ranking account ([how to get it](https://seranking.com/api/data/getting-started#authentication))
+3. Click **Save and test keys**. Both lines should turn green.
+4. Open an article and click **Check this page**. A check takes 20–40 seconds.
 
-## Як читати результат
+## Reading the results
 
-| Значок | Що означає |
+| Icon | Meaning |
 |---|---|
-| ✓ | Сторінку процитовано |
-| ◐ | Claude знайшов сторінку пошуком, але не процитував у відповіді |
-| ≈ | Процитовано іншу сторінку цього ж сайту |
-| – | Не знайдено |
-| ! | Помилка перевірки (наведи курсор, щоб побачити деталі) |
+| ✓ | The page is cited |
+| ◐ | Claude found the page through search but didn't cite it in the answer |
+| ≈ | Another page from the same site is cited |
+| – | Not found |
+| ! | The check failed (hover to see why) |
 
-Натисни на промпт у таблиці, щоб побачити деталі: фрагмент відповіді, які джерела процитовано замість тебе, з яким реальним запитом збігся промпт.
+Click a prompt in the table to see details: a snippet of the answer, which sources were cited instead of you, and which real prompt it matched.
 
-Нижче таблиці є блок **«Реальні промпти, де ця сторінка вже цитується»**. Це дані з бази SE Ranking по кожному рушію.
+Below the table, **Real prompts where this page is already cited** lists data from the SE Ranking database for each engine.
 
-### Як перевіряється кожен рушій
+### How each engine is checked
 
-- **Claude** — жива перевірка. Кожен промпт запускається в Claude з веб-пошуком прямо зараз.
-- **ChatGPT, AI Mode, AI Overview, Gemini, Perplexity** — через базу SE Ranking AI Search. Розширення бере реальні промпти, у відповідях на які вже цитується ця URL, і Claude перевіряє, чи має згенерований промпт той самий намір. Це не живий запуск промпту в ChatGPT, а синхронне наближення без черги.
+- **Claude** is a live check. Each prompt runs in Claude with web search right now.
+- **ChatGPT, AI Mode, AI Overview, Gemini and Perplexity** are checked against the SE Ranking AI Search database. The extension pulls real prompts whose AI answers already cite this URL, and Claude decides whether a generated prompt has the same intent. This is not a live run of the prompt in ChatGPT. It is a synchronous approximation with no queue.
 
-## Скільки це коштує
+## Cost
 
-- **SE Ranking:** 200 кредитів Data API за кожен промпт, який повертає база. За замовчуванням це до 10 промптів на рушій, тобто до 10 000 кредитів на перевірку. Якщо сторінка ніде не цитується, кредити не списуються. Ліміт змінюється в налаштуваннях → «Додатково».
-- **Anthropic:** 7 викликів Claude на перевірку, 5 з них з веб-пошуком.
-- **Кеш:** результат зберігається на 7 днів. Повторне відкриття тієї самої сторінки показує збережений результат без витрат. Кнопка «Перевірити заново» запускає нову перевірку.
+- **SE Ranking:** 200 Data API credits for every prompt the database returns. The default is up to 10 prompts per engine, so up to 10,000 credits per check. If the page isn't cited anywhere, no credits are spent. You can change the limit in Settings → Advanced.
+- **Anthropic:** 7 Claude calls per check, 5 of them with web search.
+- **Cache:** results are saved for 7 days. Reopening the same page shows the saved result at no cost. **Check again** runs a fresh check.
 
-## Оновлення
+## Updating
 
-Коли з'являється нова версія, завантаж свіжий zip з [Releases](../../releases/latest), заміни вміст папки і натисни ⟳ на картці розширення в `chrome://extensions`. Ключі та кеш зберігаються.
+When a new version is out, download the new zip from [Releases](../../releases/latest), replace the folder contents and click ⟳ on the extension card in `chrome://extensions`. Your keys and cache are kept.
 
-## Приватність
+## Privacy
 
-Ключі API лежать у `chrome.storage.local` твого браузера. Контент сторінки і ключі надсилаються тільки на `api.anthropic.com` і `api.seranking.com`. Жодних інших серверів немає.
+API keys are stored in your browser's `chrome.storage.local`. Page content and keys are sent only to `api.anthropic.com` and `api.seranking.com`. There are no other servers.
 
-## Для розробників
+## For developers
 
 ```
 extension/
-  manifest.json      Manifest V3, бічна панель
-  background.js      відкриває панель по кліку на іконку
-  sidepanel.html/css/js   інтерфейс, налаштування, кеш
-  lib/analyze.js     пайплайн: генерація промптів, SE Ranking, жива перевірка Claude, зіставлення
-.github/workflows/release.yml   при зміні extension/ на main збирає zip і публікує реліз
+  manifest.json           Manifest V3, side panel
+  background.js           opens the panel when the icon is clicked
+  sidepanel.html/css/js   UI, settings, cache
+  lib/analyze.js          pipeline: prompt generation, SE Ranking, live Claude check, intent matching
+.github/workflows/release.yml   on changes to extension/ in main, builds the zip and publishes a release
 ```
 
-Щоб випустити нову версію, підніми `version` у `extension/manifest.json`. GitHub Action сам створить реліз з новим zip.
+To ship a new version, bump `version` in `extension/manifest.json`. The GitHub Action creates the release with the new zip.

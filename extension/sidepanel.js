@@ -3,19 +3,19 @@ import { analyze, normUrl, testAnthropicKey, testSerankingKey } from "./lib/anal
 const $ = (id) => document.getElementById(id);
 
 const STATUS = {
-  cited: { icon: "✓", label: "Сторінка процитована" },
-  retrieved: { icon: "◐", label: "Знайдена пошуком, але не процитована" },
-  domain: { icon: "≈", label: "Процитовано іншу сторінку домену" },
-  not_found: { icon: "–", label: "Не знайдено" },
-  error: { icon: "!", label: "Помилка перевірки" },
+  cited: { icon: "✓", label: "Page cited" },
+  retrieved: { icon: "◐", label: "Found by search, not cited" },
+  domain: { icon: "≈", label: "Another page of the site cited" },
+  not_found: { icon: "–", label: "Not found" },
+  error: { icon: "!", label: "Check failed" },
 };
 
 const TYPE_LABELS = {
-  informational: "інформаційний",
+  informational: "informational",
   "how-to": "how-to",
-  comparison: "порівняння",
+  comparison: "comparison",
   "best-for": "best for",
-  problem: "проблема",
+  problem: "problem",
 };
 
 let settings = { anthropicKey: "", serankingKey: "", country: "us", serLimit: 10, model: "claude-sonnet-5-5" };
@@ -50,17 +50,17 @@ $("saveSettings").onclick = async () => {
 
   const msg = $("settingsMsg");
   if (!hasKeys()) {
-    msg.innerHTML = `<span class="bad">Потрібні обидва ключі.</span>`;
+    msg.innerHTML = `<span class="bad">Both keys are required.</span>`;
     return;
   }
-  msg.innerHTML = `<span class="spinner"></span>Перевіряю ключі…`;
+  msg.innerHTML = `<span class="spinner"></span>Checking keys…`;
   const [a, s] = await Promise.all([
     testAnthropicKey(settings.anthropicKey).catch((e) => ({ ok: false, error: e.message })),
     testSerankingKey(settings.serankingKey).catch((e) => ({ ok: false, error: e.message })),
   ]);
   msg.innerHTML = [
-    a.ok ? `<span class="ok">✓ Anthropic ключ працює</span>` : `<span class="bad">✗ Anthropic: ${esc(a.error)}</span>`,
-    s.ok ? `<span class="ok">✓ SE Ranking ключ працює</span>` : `<span class="bad">✗ SE Ranking: ${esc(s.error)}</span>`,
+    a.ok ? `<span class="ok">✓ Anthropic key works</span>` : `<span class="bad">✗ Anthropic: ${esc(a.error)}</span>`,
+    s.ok ? `<span class="ok">✓ SE Ranking key works</span>` : `<span class="bad">✗ SE Ranking: ${esc(s.error)}</span>`,
   ].join("<br>");
   if (a.ok && s.ok) {
     $("welcome").classList.add("hidden");
@@ -85,11 +85,11 @@ async function setCached(url, country, data) {
 
 function ago(ts) {
   const m = Math.round((Date.now() - ts) / 60000);
-  if (m < 1) return "щойно";
-  if (m < 60) return `${m} хв тому`;
+  if (m < 1) return "just now";
+  if (m < 60) return `${m} min ago`;
   const h = Math.round(m / 60);
-  if (h < 24) return `${h} год тому`;
-  return `${Math.round(h / 24)} дн тому`;
+  if (h < 24) return `${h} h ago`;
+  return `${Math.round(h / 24)} d ago`;
 }
 
 // ---------------------------------------------------------------- page extraction (runs inside the tab)
@@ -123,7 +123,7 @@ async function getActiveTab() {
 
 async function readPage() {
   const tab = await getActiveTab();
-  if (!tab || !/^https?:/.test(tab.url || "")) throw new Error("Відкрий звичайну веб-сторінку (http/https).");
+  if (!tab || !/^https?:/.test(tab.url || "")) throw new Error("Open a regular web page (http/https).");
   const [{ result }] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: extractPage });
   return result;
 }
@@ -138,13 +138,13 @@ async function showPageInfo() {
       $("status").classList.add("hidden");
       if (cached) {
         render(cached.data);
-        $("cacheInfo").textContent = `Показано результат, збережений ${ago(cached.at)}. Натисни кнопку, щоб перевірити заново.`;
+        $("cacheInfo").textContent = `Showing a saved result from ${ago(cached.at)}. Click the button to check again.`;
         $("cacheInfo").classList.remove("hidden");
-        $("run").textContent = "Перевірити заново";
+        $("run").textContent = "Check again";
       } else {
         $("results").innerHTML = "";
         $("cacheInfo").classList.add("hidden");
-        $("run").textContent = "Перевірити сторінку";
+        $("run").textContent = "Check this page";
       }
     }
   } catch {}
@@ -157,22 +157,22 @@ $("run").onclick = async () => {
   if (!hasKeys()) {
     $("settings").classList.remove("hidden");
     $("welcome").classList.remove("hidden");
-    return setStatus("Спершу встав API-ключі в налаштуваннях.", true);
+    return setStatus("Add your API keys in settings first.", true);
   }
   $("run").disabled = true;
   $("results").innerHTML = "";
   $("cacheInfo").classList.add("hidden");
   const started = Date.now();
   const stages = [
-    [0, "Читаю контент сторінки…"],
-    [2, "Claude генерує 5 промптів, SE Ranking шукає, де сторінка вже цитується…"],
-    [10, "Перевіряю кожен промпт у Claude з веб-пошуком…"],
-    [30, "Зіставляю промпти з реальними запитами з бази…"],
+    [0, "Reading page content…"],
+    [2, "Claude is writing 5 prompts, SE Ranking is looking up where the page is already cited…"],
+    [10, "Running each prompt in Claude with web search…"],
+    [30, "Matching prompts with real prompts from the database…"],
   ];
   const tick = () => {
     const s = (Date.now() - started) / 1000;
     const stage = stages.filter(([t]) => s >= t).pop()[1];
-    setStatus(`<span class="spinner"></span>${stage} <span class="muted">${Math.round(s)} с</span>`);
+    setStatus(`<span class="spinner"></span>${stage} <span class="muted">${Math.round(s)} s</span>`);
   };
   tick();
   timer = setInterval(tick, 1000);
@@ -193,10 +193,10 @@ $("run").onclick = async () => {
     clearInterval(timer);
     $("status").classList.add("hidden");
     render(data);
-    $("run").textContent = "Перевірити заново";
+    $("run").textContent = "Check again";
   } catch (e) {
     clearInterval(timer);
-    setStatus(`Помилка: ${esc(e.message)}`, true);
+    setStatus(`Error: ${esc(e.message)}`, true);
   } finally {
     $("run").disabled = false;
   }
@@ -222,19 +222,19 @@ function render(data) {
 
   let html = `
     <section class="card">
-      <div class="muted" style="margin-bottom:8px">Тема: <b style="color:var(--text)">${esc(data.topic || "")}</b></div>
+      <div class="muted" style="margin-bottom:8px">Topic: <b style="color:var(--text)">${esc(data.topic || "")}</b></div>
       <div class="summary">
-        <div class="stat"><b>${foundAnywhere}/${prompts.length}</b><span>промптів, де сторінку знайдено</span></div>
-        <div class="stat"><b>${checkedCells ? Math.round((citedCells / checkedCells) * 100) : 0}%</b><span>клітинок з цитуванням</span></div>
-        <div class="stat"><b>${dbTotal}</b><span>реальних промптів у базі цитують URL</span></div>
+        <div class="stat"><b>${foundAnywhere}/${prompts.length}</b><span>prompts where the page was found</span></div>
+        <div class="stat"><b>${checkedCells ? Math.round((citedCells / checkedCells) * 100) : 0}%</b><span>of checks with a citation</span></div>
+        <div class="stat"><b>${dbTotal}</b><span>real prompts in the database cite this URL</span></div>
       </div>
     </section>
 
     <section class="card">
-      <h2 style="margin-top:0">Згенеровані промпти × AI-рушії</h2>
+      <h2 style="margin-top:0">Generated prompts × AI engines</h2>
       <table class="matrix">
-        <thead><tr><th class="p">Промпт</th>${engines
-          .map((e) => `<th title="${e.mode === "live" ? "Жива перевірка" : "База SE Ranking"}">${esc(e.label)}${e.mode === "live" ? "<br>live" : ""}</th>`)
+        <thead><tr><th class="p">Prompt</th>${engines
+          .map((e) => `<th title="${e.mode === "live" ? "Live check" : "SE Ranking database"}">${esc(e.label)}${e.mode === "live" ? "<br>live" : ""}</th>`)
           .join("")}</tr></thead>
         <tbody>
           ${prompts
@@ -252,15 +252,15 @@ function render(data) {
       <div class="legend">${Object.entries(STATUS)
         .map(([k, v]) => `<span><span class="dot s-${k}">${v.icon}</span>${v.label}</span>`)
         .join("")}</div>
-      <p class="foot">Натисни на промпт, щоб побачити деталі. Claude перевіряється наживо з веб-пошуком. Інші рушії — за базою SE Ranking: промпт вважається знайденим, якщо в базі є запит з тим самим наміром, у відповіді на який цитується ця URL.</p>
+      <p class="foot">Click a prompt to see details. Claude is checked live with web search. Other engines use the SE Ranking database: a prompt counts as found when the database has a prompt with the same intent whose AI answer cites this URL.</p>
     </section>
 
     <section class="card">
-      <h2 style="margin-top:0">Реальні промпти, де ця сторінка вже цитується</h2>
+      <h2 style="margin-top:0">Real prompts where this page is already cited</h2>
       ${data.database.map(dbBlock).join("")}
     </section>
 
-    <p class="foot">Країна бази: ${esc(data.country.toUpperCase())} · SE Ranking повернув ${data.usage.serankingPromptsReturned} промптів (≈${data.usage.serankingCreditsEstimate.toLocaleString()} кредитів) · ${Math.round(data.usage.tookMs / 1000)} с</p>
+    <p class="foot">Database country: ${esc(data.country.toUpperCase())} · SE Ranking returned ${data.usage.serankingPromptsReturned} prompts (≈${data.usage.serankingCreditsEstimate.toLocaleString()} credits) · ${Math.round(data.usage.tookMs / 1000)} s</p>
   `;
 
   $("results").innerHTML = html;
@@ -273,7 +273,7 @@ function cell(r) {
   const s = r?.status || "error";
   const meta = STATUS[s] || STATUS.error;
   let title = meta.label;
-  if (r?.strength) title += r.strength === "strong" ? " (той самий запит)" : " (близький намір)";
+  if (r?.strength) title += r.strength === "strong" ? " (same query)" : " (similar intent)";
   if (r?.error) title += `: ${r.error}`;
   return `<td><span class="dot s-${s}" title="${esc(title)}">${meta.icon}</span></td>`;
 }
@@ -286,13 +286,13 @@ function details(p, engines) {
       let body = "";
       if (r.error) body = esc(r.error);
       else if (e.mode === "live") {
-        if (r.status === "domain") body = `Процитовано: ${esc(r.domainUrl)}<br>`;
-        if (r.status === "not_found" && r.topSources?.length) body = `Цитує натомість: ${r.topSources.map(esc).join(", ")}<br>`;
-        body += r.answerSnippet ? `«${esc(r.answerSnippet)}»` : "";
+        if (r.status === "domain") body = `Cited instead: ${esc(r.domainUrl)}<br>`;
+        if (r.status === "not_found" && r.topSources?.length) body = `Cites instead: ${r.topSources.map(esc).join(", ")}<br>`;
+        body += r.answerSnippet ? `“${esc(r.answerSnippet)}”` : "";
       } else if (r.status === "cited") {
-        body = `${r.strength === "strong" ? "Той самий запит" : "Близький намір"}: «${esc(r.matchedPrompt)}»`;
+        body = `${r.strength === "strong" ? "Same query" : "Similar intent"}: “${esc(r.matchedPrompt)}”`;
       } else if (r.status === "not_found") {
-        body = r.citedPromptsForUrl ? `У базі є ${r.citedPromptsForUrl} інших промптів, що цитують URL, але не з цим наміром.` : "У базі немає промптів, що цитують цю URL.";
+        body = r.citedPromptsForUrl ? `The database has ${r.citedPromptsForUrl} other prompts citing this URL, but none with this intent.` : "The database has no prompts citing this URL.";
       }
       return `<div class="detail-item"><b>${esc(e.label)} · ${meta.label}</b><p>${body}</p></div>`;
     })
@@ -300,9 +300,9 @@ function details(p, engines) {
 }
 
 function dbBlock(d) {
-  if (!d.ok) return `<div class="engine-block"><h3>${esc(d.label)} <span class="muted">помилка</span></h3><p class="muted">${esc(d.error)}</p></div>`;
+  if (!d.ok) return `<div class="engine-block"><h3>${esc(d.label)} <span class="muted">error</span></h3><p class="muted">${esc(d.error)}</p></div>`;
   if (!d.prompts.length) return `<div class="engine-block"><h3>${esc(d.label)} <span class="muted">0</span></h3></div>`;
-  return `<div class="engine-block"><h3>${esc(d.label)} <span class="muted">${d.total}${d.total > d.prompts.length ? ` (показано ${d.prompts.length})` : ""}</span></h3>
+  return `<div class="engine-block"><h3>${esc(d.label)} <span class="muted">${d.total}${d.total > d.prompts.length ? ` (showing ${d.prompts.length})` : ""}</span></h3>
     <ul>${d.prompts.map((p) => `<li>${esc(p.prompt)}${p.volume ? ` <span class="muted">· ${p.volume}</span>` : ""}</li>`).join("")}</ul></div>`;
 }
 
