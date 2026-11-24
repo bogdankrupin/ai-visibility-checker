@@ -1,73 +1,83 @@
 # AI Visibility Checker
 
-A Chrome extension that shows whether AI chats cite the page you're looking at.
+A Chrome extension that shows how AI search sees the site you're on. Data comes from the SE Ranking AI Search database.
 
-Open any article and click **Check this page**. The extension writes 5 prompts people would plausibly use to find this page and shows a matrix: for which prompts and in which engines (Claude, ChatGPT, AI Mode, AI Overview, Gemini, Perplexity) the page shows up, and where it doesn't.
+Open any website, click **Check this site**, and see:
 
-No servers and no command line. Your API keys stay in your browser.
+- **This page in AI answers.** Whether ChatGPT, Gemini, Perplexity, Google AI Mode and AI Overviews cite the exact page you're on.
+- **The site in AI answers.** How many prompts per engine link to the site (cited) and name its brand (mentioned).
+- **An insight.** For example, "Cited 6x more than named": AI uses the site as a source but rarely names the brand.
+- **Competitors.** The site's top 3 organic competitors and how often each engine cites them.
+- **Top prompt per engine.** The most visible prompt that cites the site.
+
+No sign-up and no API keys. The data is a monthly snapshot of SE Ranking's prompt sample, not a live run of every possible question.
 
 ---
 
 ## Install (2 minutes)
 
-1. **Download the extension.** Go to this repo's [Releases](../../releases/latest) and download `ai-visibility-checker.zip`.
-2. **Unzip it** into a folder you'll keep (for example `Documents/ai-visibility-checker`). Chrome loads the extension from that folder.
-3. **Open** `chrome://extensions` in Chrome.
-4. **Turn on Developer mode** with the toggle in the top right corner.
-5. **Click Load unpacked** and select the unzipped folder.
-6. **Pin the icon** using the puzzle icon in the Chrome toolbar.
+1. Download `ai-visibility-checker.zip` from the latest [release](../../releases/latest).
+2. Unzip it into a folder you'll keep, for example `Documents/ai-visibility-checker`.
+3. Open `chrome://extensions` in Chrome.
+4. Turn on **Developer mode** (top right).
+5. Click **Load unpacked** and select the unzipped folder.
+6. Pin the extension using the puzzle icon in the toolbar.
 
-## First run
+Then open any website, click the extension icon and click **Check this site**. Pick the market (US, UK, DE and others) in the top right corner.
 
-1. Click the extension icon. A side panel opens on the right.
-2. Paste two keys:
-   - **Anthropic API key** from [console.anthropic.com](https://console.anthropic.com/settings/keys)
-   - **SE Ranking API key** for the Data API from your SE Ranking account ([how to get it](https://seranking.com/api/data/getting-started#authentication))
-3. Click **Save and test keys**. Both lines should turn green.
-4. Open an article and click **Check this page**. A check takes 20–40 seconds.
+### Limits
 
-## Reading the results
+Each person can check 5 new sites per day. Sites someone has already checked this month open instantly and don't count. If you see "Today's check limit is reached", try again tomorrow.
 
-| Icon | Meaning |
+---
+
+## For the maintainer
+
+The extension talks to a small backend on Cloudflare Workers. The backend holds the SE Ranking API key, caches every site for 30 days and enforces the limits. A GitHub Action deploys the backend and publishes the extension zip with the backend address built in.
+
+### One-time setup (all in the browser)
+
+1. **Cloudflare account.** Sign in at dash.cloudflare.com and open **Workers & Pages** once, so Cloudflare creates your `workers.dev` subdomain.
+2. **Cloudflare API token.** My Profile > API Tokens > Create Token > template **Edit Cloudflare Workers**. Make sure it includes **Workers KV Storage: Edit**.
+3. **Cloudflare account ID.** It's on the right side of the Workers & Pages overview page.
+4. **Repository secrets.** In this repo: Settings > Secrets and variables > Actions > New repository secret. Add:
+   - `CLOUDFLARE_API_TOKEN`
+   - `CLOUDFLARE_ACCOUNT_ID`
+   - `SERANKING_API_KEY` (SE Ranking Data API key)
+5. **Run the workflow.** Actions > Deploy backend and release extension > Run workflow.
+
+The workflow creates the cache, deploys the backend, stores the SE Ranking key there, checks that it responds and publishes a release.
+
+### Releasing a new version
+
+Bump `version` in `extension/manifest.json` and push. The workflow redeploys and publishes the new zip.
+
+### Cost and limits
+
+| Request | SE Ranking credits |
 |---|---|
-| ✓ | The page is cited |
-| ◐ | Claude found the page through search but didn't cite it in the answer |
-| ≈ | Another page from the same site is cited |
-| – | Not found |
-| ! | The check failed (hover to see why) |
+| New site (first check this month) | up to about 5,200 |
+| New page on a site already checked | usually 0, 200 per engine where the page is cited |
+| Anything already in cache | 0 |
 
-Click a prompt in the table to see details: a snippet of the answer, which sources were cited instead of you, and which real prompt it matched.
+Settings live in `worker/wrangler.toml`:
 
-Below the table, **Real prompts where this page is already cited** lists data from the SE Ranking database for each engine.
+- `DAILY_CREDIT_BUDGET` caps credits spent per day across all users (default 60,000).
+- `DOMAINS_PER_CLIENT_PER_DAY` caps new sites per person per day (default 5).
+- `PAGES_PER_CLIENT_PER_DAY` caps new pages per person per day (default 100).
 
-### How each engine is checked
+### How the card is built
 
-- **Claude** is a live check. Each prompt runs in Claude with web search right now.
-- **ChatGPT, AI Mode, AI Overview, Gemini and Perplexity** are checked against the SE Ranking AI Search database. The extension pulls real prompts whose AI answers already cite this URL, and Claude decides whether a generated prompt has the same intent. This is not a live run of the prompt in ChatGPT. It is a synchronous approximation with no queue.
-
-## Cost
-
-- **SE Ranking:** 200 Data API credits for every prompt the database returns. The default is up to 10 prompts per engine, so up to 10,000 credits per check. If the page isn't cited anywhere, no credits are spent. You can change the limit in Settings → Advanced.
-- **Anthropic:** 7 Claude calls per check, 5 of them with web search.
-- **Cache:** results are saved for 7 days. Reopening the same page shows the saved result at no cost. **Check again** runs a fresh check.
-
-## Updating
-
-When a new version is out, download the new zip from [Releases](../../releases/latest), replace the folder contents and click ⟳ on the extension card in `chrome://extensions`. Your keys and cache are kept.
-
-## Privacy
-
-API keys are stored in your browser's `chrome.storage.local`. Page content and keys are sent only to `api.anthropic.com` and `api.seranking.com`. There are no other servers.
-
-## For developers
+| Block | SE Ranking Data API call |
+|---|---|
+| This page, per engine | `ai-search/prompts-by-target`, scope `url`, limit 1 |
+| Cited, per engine | `ai-search/prompts-by-target`, scope `base_domain`, limit 1 (uses `total`) |
+| Mentioned, per engine | `ai-search/discover-brand`, then `ai-search/prompts-by-brand`, limit 1 |
+| Competitors | `domain/competitors` (top 3 after filtering generic sites), then cited per engine |
+| Top prompt per engine | the prompt returned by the cited calls |
 
 ```
-extension/
-  manifest.json           Manifest V3, side panel
-  background.js           opens the panel when the icon is clicked
-  sidepanel.html/css/js   UI, settings, cache
-  lib/analyze.js          pipeline: prompt generation, SE Ranking, live Claude check, intent matching
-.github/workflows/release.yml   on changes to extension/ in main, builds the zip and publishes a release
+extension/   Chrome extension (Manifest V3 side panel)
+worker/      Cloudflare Worker backend
+.github/workflows/deploy.yml   deploy backend + publish release
 ```
-
-To ship a new version, bump `version` in `extension/manifest.json`. The GitHub Action creates the release with the new zip.

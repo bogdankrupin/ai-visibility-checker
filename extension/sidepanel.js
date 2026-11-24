@@ -1,203 +1,83 @@
-import { analyze, normUrl, testAnthropicKey, testSerankingKey } from "./lib/analyze.js";
+import { WORKER_URL } from "./config.js";
 
 const $ = (id) => document.getElementById(id);
+const LOCAL_TTL = 30 * 24 * 3600 * 1000;
 
-const STATUS = {
-  cited: { icon: "✓", label: "Page cited" },
-  retrieved: { icon: "◐", label: "Found by search, not cited" },
-  domain: { icon: "≈", label: "Another page of the site cited" },
-  not_found: { icon: "–", label: "Not found" },
-  error: { icon: "!", label: "Check failed" },
-};
+let clientId = null;
+let source = "us";
+let currentTab = null;
+let busy = false;
 
-const TYPE_LABELS = {
-  informational: "informational",
-  "how-to": "how-to",
-  comparison: "comparison",
-  "best-for": "best for",
-  problem: "problem",
-};
-
-let settings = { anthropicKey: "", serankingKey: "", country: "us", serLimit: 10, model: "claude-sonnet-5-5" };
-const SETTING_KEYS = Object.keys(settings);
-
-// ---------------------------------------------------------------- settings
-async function loadSettings() {
-  const stored = await chrome.storage.local.get(SETTING_KEYS);
-  settings = { ...settings, ...stored };
-  $("anthropicKey").value = settings.anthropicKey;
-  $("serankingKey").value = settings.serankingKey;
-  $("country").value = settings.country;
-  $("serLimit").value = settings.serLimit;
-  $("model").value = settings.model;
-  if (!hasKeys()) {
-    $("settings").classList.remove("hidden");
-    $("welcome").classList.remove("hidden");
-  }
+// ---------------------------------------------------------------- init
+async function init() {
+  const s = await chrome.storage.local.get(["clientId", "source"]);
+  clientId = s.clientId || crypto.randomUUID();
+  if (!s.clientId) await chrome.storage.local.set({ clientId });
+  source = s.source || "us";
+  $("source").value = source;
+  await refreshTab();
 }
 
-const hasKeys = () => Boolean(settings.anthropicKey && settings.serankingKey);
+$("source").onchange = async () => {
+  source = $("source").value;
+  await chrome.storage.local.set({ source });
+  await refreshTab();
+};
 
-$("toggleSettings").onclick = () => $("settings").classList.toggle("hidden");
+chrome.tabs.onActivated.addListener(() => refreshTab());
+chrome.tabs.onUpdated.addListener((_, info) => info.status === "complete" && refreshTab());
 
-$("saveSettings").onclick = async () => {
-  settings.anthropicKey = $("anthropicKey").value.trim();
-  settings.serankingKey = $("serankingKey").value.trim();
-  settings.country = $("country").value;
-  settings.serLimit = Math.min(100, Math.max(1, parseInt($("serLimit").value, 10) || 10));
-  settings.model = $("model").value.trim() || "claude-sonnet-5-5";
-  await chrome.storage.local.set(settings);
-
-  const msg = $("settingsMsg");
-  if (!hasKeys()) {
-    msg.innerHTML = `<span class="bad">Both keys are required.</span>`;
+async function refreshTab() {
+  if (busy) return;
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  currentTab = tab;
+  $("status").classList.add("hidden");
+  if (!tab?.url || !/^https?:/.test(tab.url)) {
+    $("host").textContent = "AI Visibility Checker";
+    $("path").textContent = "Open any website to check it.";
+    $("run").disabled = true;
+    $("results").innerHTML = "";
     return;
   }
-  msg.innerHTML = `<span class="spinner"></span>Checking keys…`;
-  const [a, s] = await Promise.all([
-    testAnthropicKey(settings.anthropicKey).catch((e) => ({ ok: false, error: e.message })),
-    testSerankingKey(settings.serankingKey).catch((e) => ({ ok: false, error: e.message })),
-  ]);
-  msg.innerHTML = [
-    a.ok ? `<span class="ok">✓ Anthropic key works</span>` : `<span class="bad">✗ Anthropic: ${esc(a.error)}</span>`,
-    s.ok ? `<span class="ok">✓ SE Ranking key works</span>` : `<span class="bad">✗ SE Ranking: ${esc(s.error)}</span>`,
-  ].join("<br>");
-  if (a.ok && s.ok) {
-    $("welcome").classList.add("hidden");
-    setTimeout(() => $("settings").classList.add("hidden"), 1500);
+  const u = new URL(tab.url);
+  $("host").textContent = u.hostname.replace(/^www\./, "");
+  $("path").textContent = u.pathname === "/" ? "Homepage" : u.pathname;
+  $("run").disabled = false;
+
+  const saved = await getLocal(tab.url);
+  if (saved) {
+    render(saved);
+    $("run").textContent = "Refresh";
+  } else {
+    $("results").innerHTML = "";
+    $("run").textContent = "Check this site";
   }
-};
-
-// ---------------------------------------------------------------- cache (per URL + country, kept 7 days)
-const CACHE_TTL = 7 * 24 * 3600 * 1000;
-const cacheKey = (url, country) => `cache:${country}:${normUrl(url)}`;
-
-async function getCached(url, country) {
-  const k = cacheKey(url, country);
-  const { [k]: entry } = await chrome.storage.local.get(k);
-  if (!entry || Date.now() - entry.at > CACHE_TTL) return null;
-  return entry;
-}
-
-async function setCached(url, country, data) {
-  await chrome.storage.local.set({ [cacheKey(url, country)]: { at: Date.now(), data } });
-}
-
-function ago(ts) {
-  const m = Math.round((Date.now() - ts) / 60000);
-  if (m < 1) return "just now";
-  if (m < 60) return `${m} min ago`;
-  const h = Math.round(m / 60);
-  if (h < 24) return `${h} h ago`;
-  return `${Math.round(h / 24)} d ago`;
-}
-
-// ---------------------------------------------------------------- page extraction (runs inside the tab)
-function extractPage() {
-  const meta = (sel) => document.querySelector(sel)?.getAttribute("content") || "";
-  const headings = [...document.querySelectorAll("h1, h2, h3")]
-    .map((h) => `${h.tagName}: ${(h.innerText || "").replace(/\s+/g, " ").trim()}`)
-    .filter((h) => h.length > 4)
-    .slice(0, 40);
-  const root = document.querySelector("article") || document.querySelector("main, [role=main]") || document.body;
-  const clone = root.cloneNode(true);
-  clone.querySelectorAll("script, style, noscript, nav, footer, header, aside, form, svg, iframe, button").forEach((n) => n.remove());
-  const text = (clone.textContent || "").replace(/\s+/g, " ").trim().slice(0, 12000);
-  const url = new URL(location.href);
-  url.hash = "";
-  return {
-    url: url.toString(),
-    canonical: document.querySelector('link[rel="canonical"]')?.href || "",
-    title: document.title,
-    description: meta('meta[name="description"]') || meta('meta[property="og:description"]'),
-    headings,
-    text,
-    lang: document.documentElement.lang || "",
-  };
-}
-
-async function getActiveTab() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  return tab;
-}
-
-async function readPage() {
-  const tab = await getActiveTab();
-  if (!tab || !/^https?:/.test(tab.url || "")) throw new Error("Open a regular web page (http/https).");
-  const [{ result }] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: extractPage });
-  return result;
-}
-
-async function showPageInfo() {
-  try {
-    const tab = await getActiveTab();
-    if (tab?.url && /^https?:/.test(tab.url)) {
-      $("pageInfo").innerHTML = `<b>${esc(tab.title || "")}</b><span>${esc(tab.url)}</span>`;
-      if ($("run").disabled) return;
-      const cached = await getCached(tab.url, settings.country);
-      $("status").classList.add("hidden");
-      if (cached) {
-        render(cached.data);
-        $("cacheInfo").textContent = `Showing a saved result from ${ago(cached.at)}. Click the button to check again.`;
-        $("cacheInfo").classList.remove("hidden");
-        $("run").textContent = "Check again";
-      } else {
-        $("results").innerHTML = "";
-        $("cacheInfo").classList.add("hidden");
-        $("run").textContent = "Check this page";
-      }
-    }
-  } catch {}
 }
 
 // ---------------------------------------------------------------- run
-let timer = null;
-
 $("run").onclick = async () => {
-  if (!hasKeys()) {
-    $("settings").classList.remove("hidden");
-    $("welcome").classList.remove("hidden");
-    return setStatus("Add your API keys in settings first.", true);
-  }
+  if (!currentTab?.url || busy) return;
+  if (WORKER_URL.startsWith("__")) return setStatus("This build has no backend address. Download the extension from the Releases page.", true);
+  busy = true;
   $("run").disabled = true;
-  $("results").innerHTML = "";
-  $("cacheInfo").classList.add("hidden");
   const started = Date.now();
-  const stages = [
-    [0, "Reading page content…"],
-    [2, "Claude is writing 5 prompts, SE Ranking is looking up where the page is already cited…"],
-    [10, "Running each prompt in Claude with web search…"],
-    [30, "Matching prompts with real prompts from the database…"],
-  ];
-  const tick = () => {
-    const s = (Date.now() - started) / 1000;
-    const stage = stages.filter(([t]) => s >= t).pop()[1];
-    setStatus(`<span class="spinner"></span>${stage} <span class="muted">${Math.round(s)} s</span>`);
-  };
+  const tick = () => setStatus(`<span class="spinner"></span>Collecting AI answers from SE Ranking… <span class="muted">${Math.round((Date.now() - started) / 1000)} s</span>`);
   tick();
-  timer = setInterval(tick, 1000);
-
+  const timer = setInterval(tick, 1000);
   try {
-    const page = await readPage();
-    const data = await analyze(
-      {
-        ANTHROPIC_API_KEY: settings.anthropicKey,
-        SERANKING_API_KEY: settings.serankingKey,
-        GEN_MODEL: settings.model,
-        CHECK_MODEL: settings.model,
-        SER_LIMIT: settings.serLimit,
-      },
-      { ...page, country: settings.country }
-    );
-    await setCached(page.url, settings.country, data);
-    clearInterval(timer);
+    const qs = new URLSearchParams({ url: currentTab.url, source });
+    const r = await fetch(`${WORKER_URL}/card?${qs}`, { headers: { "X-Client-Id": clientId } });
+    const data = await r.json().catch(() => ({ error: `Server error ${r.status}` }));
+    if (!r.ok || data.error) throw new Error(data.error || `Server error ${r.status}`);
+    await setLocal(currentTab.url, data);
     $("status").classList.add("hidden");
     render(data);
-    $("run").textContent = "Check again";
+    $("run").textContent = "Refresh";
   } catch (e) {
-    clearInterval(timer);
-    setStatus(`Error: ${esc(e.message)}`, true);
+    setStatus(esc(e.message), true);
   } finally {
+    clearInterval(timer);
+    busy = false;
     $("run").disabled = false;
   }
 };
@@ -209,109 +89,115 @@ function setStatus(html, isError = false) {
   el.innerHTML = html;
 }
 
+// ---------------------------------------------------------------- local cache (per page + market)
+const localKey = (url) => {
+  const u = new URL(url);
+  u.hash = "";
+  return `card:${source}:${u.hostname.replace(/^www\./, "")}${u.pathname.replace(/\/$/, "")}${u.search}`;
+};
+async function getLocal(url) {
+  const k = localKey(url);
+  const { [k]: e } = await chrome.storage.local.get(k);
+  return e && Date.now() - e.at < LOCAL_TTL ? e.data : null;
+}
+async function setLocal(url, data) {
+  await chrome.storage.local.set({ [localKey(url)]: { at: Date.now(), data } });
+}
+
 // ---------------------------------------------------------------- render
-function render(data) {
-  const engines = data.engines;
-  const prompts = data.prompts;
+export function render(d) {
+  const E = d.engines;
+  const cols = `grid-template-columns: 74px repeat(${E.length}, minmax(0, 1fr))`;
+  let html = "";
 
-  const foundAnywhere = prompts.filter((p) => engines.some((e) => p.results[e.id]?.status === "cited")).length;
-  const cells = prompts.flatMap((p) => engines.map((e) => p.results[e.id]?.status));
-  const citedCells = cells.filter((s) => s === "cited").length;
-  const checkedCells = cells.filter((s) => s && s !== "error").length;
-  const dbTotal = data.database.reduce((s, d) => s + (d.ok ? d.total : 0), 0);
+  // 1. This page
+  html += `<section class="card">
+    <div class="sec">This page in AI answers <span>${monthOf(d.date)}</span></div>
+    <div class="grid" style="grid-template-columns: repeat(${E.length}, minmax(0, 1fr))">
+      ${E.map((e) => {
+        const p = d.page.engines[e.id] || {};
+        const cls = p.error ? "err" : p.cited ? "yes" : "no";
+        const mark = p.error ? "?" : p.cited ? "✓" : "✕";
+        const title = p.error ? "Couldn't check" : p.cited ? `Cited in ${p.prompts} prompt${p.prompts === 1 ? "" : "s"}${p.top ? `, e.g. “${p.top}”` : ""}` : "Not cited in this engine";
+        return `<div class="cell page-cell ${cls}" title="${esc(title)}"><div class="eng">${esc(e.label)}</div><div class="mark">${mark}</div></div>`;
+      }).join("")}
+    </div>
+  </section>`;
 
-  let html = `
-    <section class="card">
-      <div class="muted" style="margin-bottom:8px">Topic: <b style="color:var(--text)">${esc(data.topic || "")}</b></div>
-      <div class="summary">
-        <div class="stat"><b>${foundAnywhere}/${prompts.length}</b><span>prompts where the page was found</span></div>
-        <div class="stat"><b>${checkedCells ? Math.round((citedCells / checkedCells) * 100) : 0}%</b><span>of checks with a citation</span></div>
-        <div class="stat"><b>${dbTotal}</b><span>real prompts in the database cite this URL</span></div>
+  // 2. Domain per engine
+  const hasBrand = Boolean(d.brand);
+  html += `<section class="card">
+    <div class="sec">${esc(d.host)} in AI answers <span>prompts per engine</span></div>
+    <div class="grid" style="${cols}">
+      <div></div>${E.map((e) => `<div class="cell head">${esc(e.label)}</div>`).join("")}
+      <div class="cell lbl" title="AI answers that link to this site">Cited</div>
+      ${E.map((e) => `<div class="cell cited-bg">${num(d.domain[e.id]?.cited)}</div>`).join("")}
+      ${hasBrand ? `<div class="cell lbl" title="AI answers that name ${esc(d.brand)}">Mentioned</div>
+      ${E.map((e) => `<div class="cell ment-bg">${num(d.domain[e.id]?.mentioned)}</div>`).join("")}` : ""}
+    </div>
+    ${hasBrand ? `<div class="muted small" style="margin-top:6px">Brand detected as “${esc(d.brand)}”.</div>` : ""}
+  </section>`;
+
+  // 3. Insight
+  html += insight(d);
+
+  // 4. Competitors
+  if (d.competitors.length > 1) {
+    const max = E.map((e) => Math.max(1, ...d.competitors.map((c) => Number(c.engines[e.id]) || 0)));
+    html += `<section class="card">
+      <div class="sec">Competitors · cited <span>darker = more within engine</span></div>
+      <div class="grid" style="grid-template-columns: 90px repeat(${E.length}, minmax(0, 1fr))">
+        <div></div>${E.map((e) => `<div class="cell head">${esc(e.label)}</div>`).join("")}
+        ${d.competitors.map((c) => `
+          <div class="cell lbl ${c.isYou ? "you" : "dom"}" title="${esc(c.domain)}">${esc(c.domain)}</div>
+          ${E.map((e, i) => {
+            const v = c.engines[e.id];
+            const a = v == null ? 0 : 0.1 + 0.8 * (Number(v) / max[i]);
+            return `<div class="cell" style="background: rgba(42,120,214,${a.toFixed(2)}); color: ${a > 0.55 ? "#fff" : "inherit"}">${num(v)}</div>`;
+          }).join("")}`).join("")}
       </div>
-    </section>
+      <div class="muted small" style="margin-top:6px">Competitors are the site's top organic rivals in ${esc(d.source.toUpperCase())}.</div>
+    </section>`;
+  }
 
-    <section class="card">
-      <h2 style="margin-top:0">Generated prompts × AI engines</h2>
-      <table class="matrix">
-        <thead><tr><th class="p">Prompt</th>${engines
-          .map((e) => `<th title="${e.mode === "live" ? "Live check" : "SE Ranking database"}">${esc(e.label)}${e.mode === "live" ? "<br>live" : ""}</th>`)
-          .join("")}</tr></thead>
-        <tbody>
-          ${prompts
-            .map(
-              (p, i) => `
-            <tr data-i="${i}">
-              <td class="p"><span class="type">${esc(TYPE_LABELS[p.type] || p.type)}</span>${esc(p.text)}</td>
-              ${engines.map((e) => cell(p.results[e.id])).join("")}
-            </tr>
-            <tr class="details hidden" id="d${i}"><td colspan="${engines.length + 1}">${details(p, engines)}</td></tr>`
-            )
-            .join("")}
-        </tbody>
-      </table>
-      <div class="legend">${Object.entries(STATUS)
-        .map(([k, v]) => `<span><span class="dot s-${k}">${v.icon}</span>${v.label}</span>`)
-        .join("")}</div>
-      <p class="foot">Click a prompt to see details. Claude is checked live with web search. Other engines use the SE Ranking database: a prompt counts as found when the database has a prompt with the same intent whose AI answer cites this URL.</p>
-    </section>
+  // 5. Top prompts
+  html += `<section class="card"><div class="sec">Top prompt per engine</div>
+    ${d.topPrompts.length
+      ? d.topPrompts.map((t) => `<div class="prompt"><span>${esc(t.prompt)}</span><span class="tag">${esc(labelOf(E, t.engine))}</span></div>`).join("")
+      : `<div class="empty">No prompts in SE Ranking's sample cite this site yet.</div>`}
+  </section>`;
 
-    <section class="card">
-      <h2 style="margin-top:0">Real prompts where this page is already cited</h2>
-      ${data.database.map(dbBlock).join("")}
-    </section>
-
-    <p class="foot">Database country: ${esc(data.country.toUpperCase())} · SE Ranking returned ${data.usage.serankingPromptsReturned} prompts (≈${data.usage.serankingCreditsEstimate.toLocaleString()} credits) · ${Math.round(data.usage.tookMs / 1000)} s</p>
-  `;
-
+  html += `<div class="muted small">${d.cache?.domain ? "Site data from cache" : "Fresh site data"} · checked ${new Date(d.checkedAt || Date.now()).toLocaleDateString()}</div>`;
   $("results").innerHTML = html;
-  $("results").querySelectorAll("tr[data-i]").forEach((tr) => {
-    tr.onclick = () => $("d" + tr.dataset.i).classList.toggle("hidden");
-  });
 }
 
-function cell(r) {
-  const s = r?.status || "error";
-  const meta = STATUS[s] || STATUS.error;
-  let title = meta.label;
-  if (r?.strength) title += r.strength === "strong" ? " (same query)" : " (similar intent)";
-  if (r?.error) title += `: ${r.error}`;
-  return `<td><span class="dot s-${s}" title="${esc(title)}">${meta.icon}</span></td>`;
+function insight(d) {
+  const i = d.insight || {};
+  const box = (t, p) => `<div class="insight"><b>${t}</b><p>${p}</p></div>`;
+  switch (i.kind) {
+    case "cited_not_named":
+      return box(`Cited ${i.ratio}x more than named`, `AI answers link to ${esc(d.host)} ${num(i.cited)} times but name ${esc(d.brand)} only ${num(i.mentioned)} times.`);
+    case "named_not_cited":
+      return box(`Named ${i.ratio}x more than cited`, `AI knows ${esc(d.brand)} but rarely uses ${esc(d.host)} as a source.`);
+    case "invisible":
+      return box("Not visible in AI answers yet", `No prompts in SE Ranking's sample cite or name this site in ${esc(d.source.toUpperCase())}.`);
+    default:
+      return "";
+  }
 }
 
-function details(p, engines) {
-  return engines
-    .map((e) => {
-      const r = p.results[e.id] || {};
-      const meta = STATUS[r.status] || STATUS.error;
-      let body = "";
-      if (r.error) body = esc(r.error);
-      else if (e.mode === "live") {
-        if (r.status === "domain") body = `Cited instead: ${esc(r.domainUrl)}<br>`;
-        if (r.status === "not_found" && r.topSources?.length) body = `Cites instead: ${r.topSources.map(esc).join(", ")}<br>`;
-        body += r.answerSnippet ? `“${esc(r.answerSnippet)}”` : "";
-      } else if (r.status === "cited") {
-        body = `${r.strength === "strong" ? "Same query" : "Similar intent"}: “${esc(r.matchedPrompt)}”`;
-      } else if (r.status === "not_found") {
-        body = r.citedPromptsForUrl ? `The database has ${r.citedPromptsForUrl} other prompts citing this URL, but none with this intent.` : "The database has no prompts citing this URL.";
-      }
-      return `<div class="detail-item"><b>${esc(e.label)} · ${meta.label}</b><p>${body}</p></div>`;
-    })
-    .join("");
+// ---------------------------------------------------------------- utils
+function num(v) {
+  if (v == null) return "–";
+  v = Number(v);
+  if (v >= 10000) return Math.round(v / 1000) + "k";
+  if (v >= 1000) return (Math.round(v / 100) / 10) + "k";
+  return String(v);
 }
-
-function dbBlock(d) {
-  if (!d.ok) return `<div class="engine-block"><h3>${esc(d.label)} <span class="muted">error</span></h3><p class="muted">${esc(d.error)}</p></div>`;
-  if (!d.prompts.length) return `<div class="engine-block"><h3>${esc(d.label)} <span class="muted">0</span></h3></div>`;
-  return `<div class="engine-block"><h3>${esc(d.label)} <span class="muted">${d.total}${d.total > d.prompts.length ? ` (showing ${d.prompts.length})` : ""}</span></h3>
-    <ul>${d.prompts.map((p) => `<li>${esc(p.prompt)}${p.volume ? ` <span class="muted">· ${p.volume}</span>` : ""}</li>`).join("")}</ul></div>`;
-}
-
+const labelOf = (E, id) => E.find((e) => e.id === id)?.label || id;
+const monthOf = (date) => (date ? new Date(date + "T00:00:00Z").toLocaleDateString("en", { month: "short", year: "numeric", timeZone: "UTC" }) : "");
 function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
-// ---------------------------------------------------------------- init
-await loadSettings();
-showPageInfo();
-chrome.tabs.onActivated.addListener(showPageInfo);
-chrome.tabs.onUpdated.addListener((_, info) => info.status === "complete" && showPageInfo());
+init();

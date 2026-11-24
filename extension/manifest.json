@@ -1,10 +1,9 @@
 {
   "manifest_version": 3,
   "name": "AI Visibility Checker",
-  "version": "0.2.0",
-  "description": "Generates 5 relevant prompts from the current page and checks whether AI answers (Claude, ChatGPT, AI Mode, AI Overview, Gemini, Perplexity) cite it.",
-  "permissions": ["sidePanel", "activeTab", "scripting", "storage"],
-  "host_permissions": ["<all_urls>"],
+  "version": "0.3.0",
+  "description": "See how ChatGPT, Gemini, Perplexity, AI Mode and AI Overviews cite the site you're on, and how it compares with competitors. Data by SE Ranking.",
+  "permissions": ["sidePanel", "tabs", "storage"],
   "background": { "service_worker": "background.js" },
   "side_panel": { "default_path": "sidepanel.html" },
   "action": { "default_title": "AI Visibility Checker" }

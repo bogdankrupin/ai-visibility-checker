@@ -1,0 +1,21 @@
+name = "ai-visibility-checker"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+workers_dev = true
+
+# KV namespace for the 30-day cache and daily limits.
+# The deploy workflow creates it on first run and replaces the placeholder below.
+[[kv_namespaces]]
+binding = "CACHE"
+id = "__KV_NAMESPACE_ID__"
+
+[vars]
+# Max SE Ranking credits the backend may spend per day (all users together)
+DAILY_CREDIT_BUDGET = "60000"
+# New sites one user can check per day (sites already in cache don't count)
+DOMAINS_PER_CLIENT_PER_DAY = "5"
+# New pages one user can check per day
+PAGES_PER_CLIENT_PER_DAY = "100"
+
+# Secret, set by the deploy workflow from the GitHub secret of the same name:
+#   SERANKING_API_KEY

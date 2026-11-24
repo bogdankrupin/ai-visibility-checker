@@ -7,61 +7,34 @@
 </head>
 <body>
   <header>
-    <h1>AI Visibility Checker</h1>
-    <button id="toggleSettings" class="ghost" title="Settings">⚙</button>
+    <div>
+      <h1 id="host">AI Visibility Checker</h1>
+      <div id="path" class="muted small"></div>
+    </div>
+    <select id="source" title="Market">
+      <option value="us">US</option>
+      <option value="uk">UK</option>
+      <option value="ca">CA</option>
+      <option value="au">AU</option>
+      <option value="de">DE</option>
+      <option value="fr">FR</option>
+      <option value="es">ES</option>
+      <option value="it">IT</option>
+      <option value="nl">NL</option>
+      <option value="br">BR</option>
+      <option value="in">IN</option>
+      <option value="pl">PL</option>
+      <option value="ua">UA</option>
+    </select>
   </header>
 
-  <section id="settings" class="card hidden">
-    <p id="welcome" class="muted hidden" style="margin-top:0">To get started, paste two API keys. They are stored only in your browser.</p>
-
-    <label>Anthropic API key
-      <input id="anthropicKey" type="password" placeholder="sk-ant-..." autocomplete="off" />
-      <a class="hint" href="https://console.anthropic.com/settings/keys" target="_blank">Where to get it →</a>
-    </label>
-
-    <label>SE Ranking API key (Data API)
-      <input id="serankingKey" type="password" placeholder="Your SE Ranking API key" autocomplete="off" />
-      <a class="hint" href="https://seranking.com/api/data/getting-started#authentication" target="_blank">Where to get it →</a>
-    </label>
-
-    <label>SE Ranking database country
-      <select id="country">
-        <option value="us">US</option>
-        <option value="gb">UK</option>
-        <option value="ca">Canada</option>
-        <option value="au">Australia</option>
-        <option value="de">Germany</option>
-        <option value="fr">France</option>
-        <option value="es">Spain</option>
-        <option value="it">Italy</option>
-        <option value="ua">Ukraine</option>
-      </select>
-    </label>
-
-    <details>
-      <summary class="muted">Advanced</summary>
-      <label>Database prompts per engine (200 credits each)
-        <input id="serLimit" type="number" min="1" max="100" value="10" />
-      </label>
-      <label>Claude model
-        <input id="model" type="text" value="claude-sonnet-5-5" />
-      </label>
-    </details>
-
-    <div class="row" style="margin-top:8px">
-      <button id="saveSettings" class="primary-sm">Save and test keys</button>
-    </div>
-    <p id="settingsMsg" class="muted"></p>
-  </section>
-
-  <section class="card">
-    <div id="pageInfo" class="muted">Open a page and click “Check this page”.</div>
-    <button id="run" class="primary">Check this page</button>
-    <div id="cacheInfo" class="foot hidden"></div>
-  </section>
-
+  <button id="run" class="primary">Check this site</button>
   <section id="status" class="hidden"></section>
-  <section id="results"></section>
+  <main id="results"></main>
+
+  <footer class="muted small">
+    Data: <a href="https://seranking.com/?utm_source=ai-visibility-checker" target="_blank">SE Ranking</a> AI Search, monthly prompt sample.
+  </footer>
 
   <script type="module" src="sidepanel.js"></script>
 </body>
