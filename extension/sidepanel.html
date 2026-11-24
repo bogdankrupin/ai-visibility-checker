@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8" />
+  <title>AI Visibility Checker</title>
+  <link rel="stylesheet" href="sidepanel.css" />
+</head>
+<body>
+  <header>
+    <h1>AI Visibility Checker</h1>
+    <button id="toggleSettings" class="ghost" title="Налаштування">⚙</button>
+  </header>
+
+  <section id="settings" class="card hidden">
+    <p id="welcome" class="muted hidden" style="margin-top:0">Щоб почати, встав два API-ключі. Вони зберігаються лише в твоєму браузері.</p>
+
+    <label>Anthropic API key
+      <input id="anthropicKey" type="password" placeholder="sk-ant-..." autocomplete="off" />
+      <a class="hint" href="https://console.anthropic.com/settings/keys" target="_blank">Де взяти ключ →</a>
+    </label>
+
+    <label>SE Ranking API key (Data API)
+      <input id="serankingKey" type="password" placeholder="Ключ SE Ranking API" autocomplete="off" />
+      <a class="hint" href="https://seranking.com/api/data/getting-started#authentication" target="_blank">Де взяти ключ →</a>
+    </label>
+
+    <label>Країна бази SE Ranking
+      <select id="country">
+        <option value="us">US</option>
+        <option value="gb">UK</option>
+        <option value="ca">Canada</option>
+        <option value="au">Australia</option>
+        <option value="de">Germany</option>
+        <option value="fr">France</option>
+        <option value="es">Spain</option>
+        <option value="it">Italy</option>
+        <option value="ua">Ukraine</option>
+      </select>
+    </label>
+
+    <details>
+      <summary class="muted">Додатково</summary>
+      <label>Промптів з бази на рушій (200 кредитів за кожен)
+        <input id="serLimit" type="number" min="1" max="100" value="10" />
+      </label>
+      <label>Модель Claude
+        <input id="model" type="text" value="claude-sonnet-5-5" />
+      </label>
+    </details>
+
+    <div class="row" style="margin-top:8px">
+      <button id="saveSettings" class="primary-sm">Зберегти і перевірити ключі</button>
+    </div>
+    <p id="settingsMsg" class="muted"></p>
+  </section>
+
+  <section class="card">
+    <div id="pageInfo" class="muted">Відкрий сторінку і натисни «Перевірити».</div>
+    <button id="run" class="primary">Перевірити сторінку</button>
+    <div id="cacheInfo" class="foot hidden"></div>
+  </section>
+
+  <section id="status" class="hidden"></section>
+  <section id="results"></section>
+
+  <script type="module" src="sidepanel.js"></script>
+</body>
+</html>
